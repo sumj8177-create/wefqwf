@@ -98,6 +98,38 @@ io.on('connection', (socket) => {
     io.to(`channel:${channelId}`).emit('message:new', message);
   });
 
+  socket.on('message:delete', (data) => {
+    const { messageId } = data || {};
+    const message = db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
+    if (!message) return;
+    const channel = channelForUser(message.channel_id, socket.userId);
+    if (!channel) return;
+
+    const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(channel.server_id);
+    const isAuthor = message.user_id === socket.userId;
+    const isOwner = server && server.owner_id === socket.userId;
+    if (!isAuthor && !isOwner) return;
+
+    db.prepare('DELETE FROM messages WHERE id = ?').run(messageId);
+    io.to(`channel:${message.channel_id}`).emit('message:delete', { id: messageId, channelId: message.channel_id });
+  });
+
+  socket.on('message:pin', (data) => {
+    const { messageId } = data || {};
+    const message = db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
+    if (!message) return;
+    const channel = channelForUser(message.channel_id, socket.userId);
+    if (!channel) return;
+
+    const nowPinned = message.pinned_at ? null : Date.now();
+    db.prepare('UPDATE messages SET pinned_at = ? WHERE id = ?').run(nowPinned, messageId);
+    io.to(`channel:${message.channel_id}`).emit('message:pin', {
+      id: messageId,
+      channelId: message.channel_id,
+      pinnedAt: nowPinned,
+    });
+  });
+
   socket.on('typing', ({ channelId }) => {
     if (!channelId) return;
     socket.to(`channel:${channelId}`).emit('typing', { channelId, username: socket.username });
