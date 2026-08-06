@@ -53,14 +53,31 @@ CREATE TABLE IF NOT EXISTS messages (
   user_id TEXT NOT NULL,
   content TEXT NOT NULL,
   created_at INTEGER NOT NULL,
+  pinned_at INTEGER,
   FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS message_reports (
+  id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL,
+  reporter_id TEXT NOT NULL,
+  reason TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_channels_server ON channels(server_id, position);
 CREATE INDEX IF NOT EXISTS idx_members_user ON server_members(user_id);
 `);
+
+// Lightweight migration for databases created before pinned_at existed
+const messageCols = db.prepare("PRAGMA table_info(messages)").all().map((c) => c.name);
+if (!messageCols.includes('pinned_at')) {
+  db.exec('ALTER TABLE messages ADD COLUMN pinned_at INTEGER');
+}
 
 function id() {
   return crypto.randomBytes(12).toString('hex');
