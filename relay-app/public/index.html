@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Relay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+  <!-- AUTH SCREEN -->
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="brand-mark">◈</span>
+        <span class="brand-name">Relay</span>
+      </div>
+
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-tab="login">Log in</button>
+        <button class="auth-tab" data-tab="register">Create account</button>
+      </div>
+
+      <form id="login-form" class="auth-form">
+        <label>Username or email
+          <input type="text" id="login-username" autocomplete="username" required />
+        </label>
+        <label>Password
+          <input type="password" id="login-password" autocomplete="current-password" required />
+        </label>
+        <p class="auth-error" id="login-error"></p>
+        <button type="submit" class="btn-primary">Log in</button>
+      </form>
+
+      <form id="register-form" class="auth-form hidden">
+        <label>Username
+          <input type="text" id="register-username" autocomplete="username" required minlength="3" maxlength="32" />
+        </label>
+        <label>Email
+          <input type="email" id="register-email" autocomplete="email" required />
+        </label>
+        <label>Password
+          <input type="password" id="register-password" autocomplete="new-password" required minlength="8" />
+        </label>
+        <p class="auth-hint">At least 8 characters.</p>
+        <p class="auth-error" id="register-error"></p>
+        <button type="submit" class="btn-primary">Create account</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MAIN APP -->
+  <div id="app-screen" class="app-screen hidden">
+
+    <!-- Server rail -->
+    <nav class="server-rail" id="server-rail">
+      <div class="server-rail-scroll" id="server-list"></div>
+      <button class="rail-btn add-server-btn" id="add-server-btn" title="Add a server">+</button>
+    </nav>
+
+    <!-- Channel sidebar -->
+    <aside class="channel-sidebar">
+      <div class="server-header" id="server-header">
+        <span id="current-server-name">Select a server</span>
+        <button id="server-menu-btn" class="icon-btn" title="Server options">⋯</button>
+      </div>
+
+      <div class="channel-list" id="channel-list"></div>
+
+      <button class="add-channel-btn hidden" id="add-channel-btn">+ Add channel</button>
+
+      <div class="user-bar">
+        <div class="user-avatar" id="me-avatar"></div>
+        <div class="user-meta">
+          <div class="user-name" id="me-username"></div>
+          <div class="user-status">Online</div>
+        </div>
+        <button class="icon-btn" id="logout-btn" title="Log out">⏻</button>
+      </div>
+    </aside>
+
+    <!-- Chat main -->
+    <main class="chat-main">
+      <div class="chat-header">
+        <span class="chat-hash">#</span>
+        <span id="current-channel-name">select-a-channel</span>
+      </div>
+
+      <div class="chat-messages" id="chat-messages">
+        <div class="empty-state" id="empty-state">
+          <p class="empty-title">Pick a server, then a channel</p>
+          <p class="empty-sub">Or create your own server on the left to get started.</p>
+        </div>
+      </div>
+
+      <div class="typing-indicator" id="typing-indicator"></div>
+
+      <form class="message-form hidden" id="message-form">
+        <input type="text" id="message-input" placeholder="Message..." autocomplete="off" maxlength="4000" />
+        <button type="submit" class="send-btn" title="Send">➤</button>
+      </form>
+    </main>
+
+    <!-- Member list -->
+    <aside class="member-list hidden" id="member-list">
+      <div class="member-list-header">Members</div>
+      <div class="member-list-body" id="member-list-body"></div>
+    </aside>
+  </div>
+
+  <!-- MODALS -->
+  <div class="modal-overlay hidden" id="modal-overlay">
+    <div class="modal" id="create-server-modal">
+      <h2>Create a server</h2>
+      <label>Server name
+        <input type="text" id="new-server-name" placeholder="My Server" maxlength="60" />
+      </label>
+      <div class="modal-actions">
+        <button class="btn-ghost" data-close-modal>Cancel</button>
+        <button class="btn-primary" id="confirm-create-server">Create</button>
+      </div>
+      <div class="modal-divider">or</div>
+      <label>Join with an invite code
+        <input type="text" id="join-invite-code" placeholder="e.g. 4f9a2b1c8d" />
+      </label>
+      <div class="modal-actions">
+        <button class="btn-primary" id="confirm-join-server">Join server</button>
+      </div>
+      <p class="modal-error" id="server-modal-error"></p>
+    </div>
+
+    <div class="modal hidden" id="server-options-modal">
+      <h2 id="server-options-title">Server options</h2>
+      <div class="invite-box">
+        <span>Invite code</span>
+        <code id="invite-code-display"></code>
+        <button class="btn-ghost" id="copy-invite-btn">Copy</button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" data-close-modal>Close</button>
+        <button class="btn-danger" id="leave-or-delete-btn"></button>
+      </div>
+    </div>
+
+    <div class="modal hidden" id="add-channel-modal">
+      <h2>Create a channel</h2>
+      <label>Channel name
+        <input type="text" id="new-channel-name" placeholder="general" maxlength="40" />
+      </label>
+      <p class="modal-error" id="channel-modal-error"></p>
+      <div class="modal-actions">
+        <button class="btn-ghost" data-close-modal>Cancel</button>
+        <button class="btn-primary" id="confirm-create-channel">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
