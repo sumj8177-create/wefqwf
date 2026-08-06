@@ -126,6 +126,12 @@
       clearTimeout(state.typingDisplayTimeout);
       state.typingDisplayTimeout = setTimeout(() => { el.textContent = ''; }, 2500);
     });
+    state.socket.on('message:delete', ({ id, channelId }) => {
+      if (channelId === state.currentChannelId) removeMessage(id);
+    });
+    state.socket.on('message:pin', ({ id, channelId, pinnedAt }) => {
+      if (channelId === state.currentChannelId) setMessagePinned(id, pinnedAt);
+    });
   }
 
   // ---------- SERVERS ----------
@@ -249,12 +255,15 @@
     const container = $('#chat-messages');
     const group = document.createElement('div');
     group.className = 'msg-group';
+    group.dataset.messageId = m.id;
+    group.dataset.userId = m.user_id;
     group.innerHTML = `
       <div class="msg-avatar" style="background:${m.avatar_color}">${initials(m.username)}</div>
       <div class="msg-body">
         <div class="msg-meta">
           <span class="msg-author">${escapeHtml(m.username)}</span>
           <span class="msg-time">${fmtTime(m.created_at)}</span>
+          ${m.pinned_at ? '<span class="pin-badge" title="Pinned">📌</span>' : ''}
         </div>
         <div class="msg-text"></div>
       </div>
@@ -262,6 +271,106 @@
     group.querySelector('.msg-text').textContent = m.content;
     container.appendChild(group);
   }
+
+  function removeMessage(messageId) {
+    const el = $(`.msg-group[data-message-id="${messageId}"]`);
+    if (el) el.remove();
+  }
+
+  function setMessagePinned(messageId, pinnedAt) {
+    const el = $(`.msg-group[data-message-id="${messageId}"]`);
+    if (!el) return;
+    const meta = el.querySelector('.msg-meta');
+    const existingBadge = meta.querySelector('.pin-badge');
+    if (pinnedAt && !existingBadge) {
+      const badge = document.createElement('span');
+      badge.className = 'pin-badge';
+      badge.title = 'Pinned';
+      badge.textContent = '📌';
+      meta.appendChild(badge);
+    } else if (!pinnedAt && existingBadge) {
+      existingBadge.remove();
+    }
+  }
+
+  // ---------- MESSAGE CONTEXT MENU ----------
+  const contextMenu = document.createElement('div');
+  contextMenu.className = 'msg-context-menu hidden';
+  document.body.appendChild(contextMenu);
+
+  function closeContextMenu() {
+    contextMenu.classList.add('hidden');
+    contextMenu.innerHTML = '';
+  }
+
+  function menuItem(label, onClick, opts = {}) {
+    const item = document.createElement('div');
+    item.className = 'ctx-item' + (opts.danger ? ' ctx-danger' : '');
+    item.textContent = label;
+    item.addEventListener('click', () => {
+      closeContextMenu();
+      onClick();
+    });
+    return item;
+  }
+
+  $('#chat-messages').addEventListener('contextmenu', (e) => {
+    const group = e.target.closest('.msg-group');
+    if (!group) return;
+    e.preventDefault();
+
+    const messageId = group.dataset.messageId;
+    const authorId = group.dataset.userId;
+    const isOwnMessage = authorId === state.user.id;
+    const currentServer = state.servers.find((s) => s.id === state.currentServerId);
+    const isServerOwner = currentServer && currentServer.role === 'owner';
+    const isPinned = !!group.querySelector('.pin-badge');
+    const content = group.querySelector('.msg-text').textContent;
+
+    contextMenu.innerHTML = '';
+    contextMenu.appendChild(menuItem('Reply', () => {
+      const author = group.querySelector('.msg-author').textContent;
+      const input = $('#message-input');
+      input.value = `@${author} `;
+      input.focus();
+    }));
+    contextMenu.appendChild(menuItem('Copy Text', () => {
+      navigator.clipboard.writeText(content);
+    }));
+    contextMenu.appendChild(menuItem('Copy Message ID', () => {
+      navigator.clipboard.writeText(messageId);
+    }));
+    contextMenu.appendChild(menuItem(isPinned ? 'Unpin Message' : 'Pin Message', () => {
+      state.socket.emit('message:pin', { messageId });
+    }));
+    if (!isOwnMessage) {
+      contextMenu.appendChild(menuItem('Report Message', async () => {
+        try {
+          await api('POST', `/messages/${messageId}/report`, {});
+          alert('Message reported to the server owner.');
+        } catch (err) {
+          alert(err.message);
+        }
+      }));
+    }
+    if (isOwnMessage || isServerOwner) {
+      contextMenu.appendChild(menuItem('Delete Message', () => {
+        state.socket.emit('message:delete', { messageId });
+      }, { danger: true }));
+    }
+
+    const menuWidth = 200;
+    const x = Math.min(e.clientX, window.innerWidth - menuWidth - 8);
+    const y = Math.min(e.clientY, window.innerHeight - contextMenu.children.length * 34 - 16);
+    contextMenu.style.left = `${x}px`;
+    contextMenu.style.top = `${y}px`;
+    contextMenu.classList.remove('hidden');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!contextMenu.contains(e.target)) closeContextMenu();
+  });
+  document.addEventListener('scroll', closeContextMenu, true);
 
   function scrollToBottom() {
     const container = $('#chat-messages');
