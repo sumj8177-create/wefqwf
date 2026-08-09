@@ -15,6 +15,7 @@
     currentDmUserId: null,
     currentDmUser: null,
     bots: [],
+    lastRenderTracker: null,
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -127,6 +128,7 @@
       if (message.channel_id === state.currentChannelId) {
         appendMessage(message);
         scrollToBottom();
+        bumpMessageCount(1);
       }
     });
     state.socket.on('typing', ({ channelId, username }) => {
@@ -137,7 +139,10 @@
       state.typingDisplayTimeout = setTimeout(() => { el.textContent = ''; }, 2500);
     });
     state.socket.on('message:delete', ({ id, channelId }) => {
-      if (channelId === state.currentChannelId) removeMessage(id);
+      if (channelId === state.currentChannelId) {
+        removeMessage(id);
+        bumpMessageCount(-1);
+      }
     });
     state.socket.on('message:pin', ({ id, channelId, pinnedAt }) => {
       if (channelId === state.currentChannelId) setMessagePinned(id, pinnedAt);
@@ -218,6 +223,8 @@
     $('#member-list').classList.add('hidden');
     $('#app-screen').classList.remove('with-members');
     $('#chat-hash').classList.add('hidden');
+    $('#msg-count-badge').classList.add('hidden');
+    state.currentChannelMessageCount = undefined;
 
     if (!state.currentDmUserId) {
       $('#current-channel-name').textContent = 'Select a conversation';
@@ -265,6 +272,7 @@
     const { messages } = await api('GET', `/dms/${userId}`);
     const container = $('#chat-messages');
     container.innerHTML = '';
+    state.lastRenderTracker = null;
     let lastDay = null;
     messages.forEach((m) => {
       const day = fmtDay(m.created_at);
@@ -274,6 +282,7 @@
         divider.textContent = day;
         container.appendChild(divider);
         lastDay = day;
+        state.lastRenderTracker = null;
       }
       appendDmMessage(m);
     });
@@ -281,21 +290,7 @@
   }
 
   function appendDmMessage(m) {
-    const container = $('#chat-messages');
-    const group = document.createElement('div');
-    group.className = 'msg-group';
-    group.innerHTML = `
-      <div class="msg-avatar" style="background:${m.avatar_color}">${initials(m.username)}</div>
-      <div class="msg-body">
-        <div class="msg-meta">
-          <span class="msg-author">${escapeHtml(m.username)}</span>
-          <span class="msg-time">${fmtTime(m.created_at)}</span>
-        </div>
-        <div class="msg-text"></div>
-      </div>
-    `;
-    group.querySelector('.msg-text').textContent = m.content;
-    container.appendChild(group);
+    renderMessageLine(m);
   }
 
   $('#new-dm-btn').addEventListener('click', () => {
@@ -357,6 +352,31 @@
     $('#message-input').focus();
 
     await loadMessages(channelId);
+    await refreshMessageCount(channelId);
+  }
+
+  function formatCount(n) {
+    return n === 1 ? '1 message' : `${n.toLocaleString()} messages`;
+  }
+
+  async function refreshMessageCount(channelId) {
+    try {
+      const { count } = await api('GET', `/messages/${channelId}/count`);
+      if (channelId !== state.currentChannelId) return; // user may have switched channels while this was in flight
+      const badge = $('#msg-count-badge');
+      badge.textContent = formatCount(count);
+      badge.classList.remove('hidden');
+      state.currentChannelMessageCount = count;
+    } catch (err) {
+      // non-critical — just hide the badge rather than surface an error
+      $('#msg-count-badge').classList.add('hidden');
+    }
+  }
+
+  function bumpMessageCount(delta) {
+    if (typeof state.currentChannelMessageCount !== 'number') return;
+    state.currentChannelMessageCount = Math.max(0, state.currentChannelMessageCount + delta);
+    $('#msg-count-badge').textContent = formatCount(state.currentChannelMessageCount);
   }
 
   $('#add-channel-btn').addEventListener('click', () => {
@@ -383,6 +403,7 @@
   async function loadMessages(channelId) {
     const container = $('#chat-messages');
     container.innerHTML = '';
+    state.lastRenderTracker = null;
     const { messages } = await api('GET', `/messages/${channelId}`);
     let lastDay = null;
     messages.forEach((m) => {
@@ -393,50 +414,93 @@
         divider.textContent = day;
         container.appendChild(divider);
         lastDay = day;
+        state.lastRenderTracker = null;
       }
-      appendMessage(m, false);
+      appendMessage(m);
     });
     scrollToBottom();
   }
 
-  function appendMessage(m) {
+  // Shared renderer for both channel messages and DMs: groups consecutive
+  // messages from the same sender (within 5 minutes) under one avatar/name,
+  // Discord-style, instead of repeating the header on every line.
+  function renderMessageLine(m) {
     const container = $('#chat-messages');
+    const authorId = m.user_id || m.sender_id;
+    const tracker = state.lastRenderTracker;
+    const canGroup = tracker && tracker.userId === authorId && (m.created_at - tracker.time) < 5 * 60 * 1000;
+
+    if (canGroup) {
+      const line = document.createElement('div');
+      line.className = 'msg-line';
+      line.dataset.messageId = m.id;
+      line.dataset.userId = authorId;
+      line.title = fmtTime(m.created_at);
+      line.innerHTML = `
+        <span class="msg-text"></span>
+        ${m.pinned_at ? '<span class="pin-badge" title="Pinned">📌</span>' : ''}
+      `;
+      line.querySelector('.msg-text').textContent = m.content;
+      tracker.linesEl.appendChild(line);
+      tracker.time = m.created_at;
+      return;
+    }
+
     const group = document.createElement('div');
     group.className = 'msg-group';
-    group.dataset.messageId = m.id;
-    group.dataset.userId = m.user_id;
+    group.dataset.userId = authorId;
     group.innerHTML = `
       <div class="msg-avatar" style="background:${m.avatar_color}">${initials(m.username)}</div>
-      <div class="msg-body">
+      <div class="msg-lines-wrap">
         <div class="msg-meta">
           <span class="msg-author">${escapeHtml(m.username)}</span>
           ${m.is_bot ? '<span class="bot-badge">BOT</span>' : ''}
           <span class="msg-time">${fmtTime(m.created_at)}</span>
-          ${m.pinned_at ? '<span class="pin-badge" title="Pinned">📌</span>' : ''}
         </div>
-        <div class="msg-text"></div>
+        <div class="msg-lines"></div>
       </div>
     `;
-    group.querySelector('.msg-text').textContent = m.content;
+    const linesEl = group.querySelector('.msg-lines');
+    const firstLine = document.createElement('div');
+    firstLine.className = 'msg-line';
+    firstLine.dataset.messageId = m.id;
+    firstLine.dataset.userId = authorId;
+    firstLine.innerHTML = `
+      <span class="msg-text"></span>
+      ${m.pinned_at ? '<span class="pin-badge" title="Pinned">📌</span>' : ''}
+    `;
+    firstLine.querySelector('.msg-text').textContent = m.content;
+    linesEl.appendChild(firstLine);
     container.appendChild(group);
+
+    state.lastRenderTracker = { userId: authorId, time: m.created_at, linesEl };
+  }
+
+  function appendMessage(m) {
+    renderMessageLine(m);
   }
 
   function removeMessage(messageId) {
-    const el = $(`.msg-group[data-message-id="${messageId}"]`);
-    if (el) el.remove();
+    const line = $(`.msg-line[data-message-id="${messageId}"]`);
+    if (!line) return;
+    const group = line.closest('.msg-group');
+    line.remove();
+    if (group && !group.querySelector('.msg-line')) {
+      group.remove();
+    }
+    state.lastRenderTracker = null;
   }
 
   function setMessagePinned(messageId, pinnedAt) {
-    const el = $(`.msg-group[data-message-id="${messageId}"]`);
-    if (!el) return;
-    const meta = el.querySelector('.msg-meta');
-    const existingBadge = meta.querySelector('.pin-badge');
+    const line = $(`.msg-line[data-message-id="${messageId}"]`);
+    if (!line) return;
+    const existingBadge = line.querySelector('.pin-badge');
     if (pinnedAt && !existingBadge) {
       const badge = document.createElement('span');
       badge.className = 'pin-badge';
       badge.title = 'Pinned';
       badge.textContent = '📌';
-      meta.appendChild(badge);
+      line.appendChild(badge);
     } else if (!pinnedAt && existingBadge) {
       existingBadge.remove();
     }
@@ -464,11 +528,15 @@
   }
 
   $('#chat-messages').addEventListener('contextmenu', (e) => {
-    const group = e.target.closest('.msg-group');
+    const line = e.target.closest('.msg-line');
+    if (!line) return;
+    const group = line.closest('.msg-group');
     if (!group) return;
     e.preventDefault();
 
-    const content = group.querySelector('.msg-text').textContent;
+    const content = line.querySelector('.msg-text').textContent;
+    const messageId = line.dataset.messageId;
+    const authorId = group.dataset.userId;
 
     if (state.mode === 'dm') {
       contextMenu.innerHTML = '';
@@ -483,12 +551,10 @@
       return;
     }
 
-    const messageId = group.dataset.messageId;
-    const authorId = group.dataset.userId;
     const isOwnMessage = authorId === state.user.id;
     const currentServer = state.servers.find((s) => s.id === state.currentServerId);
     const isServerOwner = currentServer && currentServer.role === 'owner';
-    const isPinned = !!group.querySelector('.pin-badge');
+    const isPinned = !!line.querySelector('.pin-badge');
 
     contextMenu.innerHTML = '';
     contextMenu.appendChild(menuItem('Reply', () => {
@@ -696,6 +762,7 @@
         <div class="bot-card-header">
           <div class="member-avatar" style="background:${bot.avatarColor}">${initials(bot.name)}</div>
           <span class="bot-card-name">${escapeHtml(bot.name)}</span>
+          <button class="btn-ghost bot-message" title="Message this bot">✉ Message</button>
           <button class="icon-btn bot-delete" title="Delete bot">🗑</button>
         </div>
         <div class="triggers-list">${triggerRows}</div>
@@ -710,6 +777,11 @@
           </button>
         ` : '<p class="modal-hint">Open a channel first to add this bot to it.</p>'}
       `;
+
+      card.querySelector('.bot-message').addEventListener('click', () => {
+        closeModal();
+        openDm(bot.userId, bot.name, bot.avatarColor);
+      });
 
       card.querySelector('.bot-delete').addEventListener('click', async () => {
         if (!confirm(`Delete bot "${bot.name}"? This cannot be undone.`)) return;

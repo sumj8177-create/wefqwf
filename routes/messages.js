@@ -151,4 +151,19 @@ router.post('/:messageId/report', async (req, res, next) => {
   }
 });
 
+// Total message count for a channel — always reflects the true count,
+// regardless of how many messages exist or how far back history goes
+router.get('/:channelId/count', async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    if (!(await channelAccess(channelId, req.userId))) {
+      return res.status(403).json({ error: 'No access to this channel' });
+    }
+    const row = await prepare('SELECT COUNT(*) as count FROM messages WHERE channel_id = ?').get(channelId);
+    res.json({ count: row.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
