@@ -36,6 +36,7 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
+  overflow: hidden;
   background: var(--bg-deepest);
   color: var(--text-primary);
   font-family: var(--font-body);
@@ -173,6 +174,7 @@ input { font-family: var(--font-body); }
   height: 100vh;
   display: grid;
   grid-template-columns: 72px 240px 1fr;
+  overflow: hidden;
 }
 .app-screen.with-members {
   grid-template-columns: 72px 240px 1fr 220px;
@@ -238,6 +240,7 @@ input { font-family: var(--font-body); }
   background: var(--bg-panel);
   display: flex;
   flex-direction: column;
+  min-height: 0;
   border-right: 1px solid var(--border);
 }
 .server-header {
@@ -328,6 +331,7 @@ input { font-family: var(--font-body); }
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 .chat-header {
   height: 52px;
