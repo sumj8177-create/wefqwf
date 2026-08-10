@@ -126,10 +126,7 @@
     state.socket = io({ auth: { token: state.token } });
     state.socket.on('message:new', (message) => {
       if (message.channel_id === state.currentChannelId) {
-        const container = $('#chat-messages');
-        const shouldStick = isNearBottom(container);
         appendMessage(message);
-        if (shouldStick) scrollToBottom();
         bumpMessageCount(1);
       }
     });
@@ -152,10 +149,7 @@
     state.socket.on('dm:new', (message) => {
       const otherId = message.sender_id === state.user.id ? message.recipient_id : message.sender_id;
       if (state.mode === 'dm' && state.currentDmUserId === otherId) {
-        const container = $('#chat-messages');
-        const shouldStick = isNearBottom(container);
         appendDmMessage(message);
-        if (shouldStick) scrollToBottom();
       }
       loadDmList();
     });
